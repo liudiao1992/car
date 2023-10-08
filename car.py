@@ -6,11 +6,11 @@
 # ------------------------------------------------
 
 
+import importlib
+import lxml
 import requests
 import pymysql
 from bs4 import BeautifulSoup
-import lxml
-import htmllib
 import re
 import json
 import sys
@@ -33,16 +33,16 @@ configs = config_default.configs
 # print 123
 # exit()
 
-reload(sys)
+# importlib.reload(sys)
 
-sys.setdefaultencoding('utf-8')
+# sys.setdefaultencoding('utf-8')
 
 HOSTNAME = '127.0.0.1'
 USERNAME = 'root'
-PASSWORD = ''
-DATABASE = 'pydata'
+PASSWORD = 'root'
+DATABASE = 'car'
 
-conn = pymysql.connect(HOSTNAME, USERNAME, PASSWORD, DATABASE, charset="utf8")
+conn = pymysql.connect(host = HOSTNAME, user=USERNAME, password=PASSWORD, database=DATABASE, charset="utf8")
 cur = conn.cursor()
 
 
@@ -117,14 +117,16 @@ def get_brand():
             # print letter.find_next()
             for li in letter.find_next():
                 args = li.find("a")
-                sub_arg = (letter.get_text(),args['href'],re.findall(u".*\(", args.get_text())[0].replace("(",""),re.findall(u"\d+\.?\d*", args.find("em").get_text())[0])
+                sub_arg = (letter.get_text(),args['href'],re.findall(u'.*\(', args.get_text())[0].replace("(",""),re.findall(u"\d+\.?\d*", args.find("em").get_text())[0])
                 data.append(sub_arg)
 
                 # print li
 
 
+        # 保存所有汽车品牌 
         # rowcount = cur.executemany('INSERT INTO car_brand (firstletter,linkurl,name,carnum) values(%s,%s,%s,%s)', data)
         # conn.commit()
+        
         #
         # cur.close()
         # conn.close()
@@ -157,13 +159,13 @@ def obtain_brand():
 
         # print soup.find_all("div")
 
-        print soup.find_all(name='div', attrs={"class":"cartree"})
+        print(soup.find_all(name='div', attrs={"class":"cartree"}))
 
         for div in soup.find_all(name='div', attrs={"class":"cartree-letter"}):
-            print div.get_text()
+            print(div.get_text())
 
         for letter in soup.select("#cartree .cartree-letter"):
-            print letter()
+            print(letter())
 
 def obtain_series(data):
 
@@ -172,13 +174,13 @@ def obtain_series(data):
 
     for info in data:
 
-        # print host + info[1]
-        res = requests.get(host+info[1]);
+        # print("obtain_series:"+host + info[1])
+        res = requests.get(host+info[1])
         if res.status_code == 200:
             res.close()
         # res.encoding = 'gb2312'
         soup = BeautifulSoup(res.text, "lxml")
-
+        # print(soup.title)
         # print soup.title
 
         level_name = ''
@@ -193,7 +195,7 @@ def obtain_series(data):
 
                 # print level.attrs['class']
                 if level.attrs['class'][0] == 'list-dl-text':
-                    level_name = level.find_previous().get_text()
+                    level_name = level.find_previous().get_text()[:-1]
                     # print level_name
                     for model in level.select("a"):
 
@@ -202,11 +204,16 @@ def obtain_series(data):
 
                         # print firm,firm_url,level_name,model_name,model_url
 
+                        #保存车系数据             
                         # rowcount = cur.execute('INSERT INTO car_series (firm,firmurl,levelname,model,modelurl,brandurl) values(%s,%s,%s,%s,%s,%s)', (firm, firm_url, level_name, model_name, model_url, res.url))
                         # conn.commit()
 
-                        result = obtain_model(re.findall("series-(\d+)[\.|-]",model_url)[0])
-                        model_type_save(result)
+                        try:
+                            result = obtain_model(re.findall("series-(\d+)[\.|-]",model_url)[0])
+                            model_type_save(result)
+                        except Exception as e:
+                            pass
+                        
 
     # cur.close()
     # conn.close()
@@ -216,9 +223,10 @@ def obtain_model(series_id):
     url = 'https://car.m.autohome.com.cn/ashx/car/GetModelConfigNew.ashx?seriesId={}'
     request_model = requests.get(url.format(series_id))
     #
-    print request_model.url
+    print(request_model.url)
     # print request_model.text
-    # print request_model.json()
+    # print(request_model.json())
+    # exit()
     # # print request_model.status_code
     # result = request_model.json()
     # print result
@@ -227,7 +235,7 @@ def obtain_model(series_id):
     if request_model.status_code == 200:
         model_json = request_model.json()
         request_model.close()
-        # print  model_json['param']
+        # print(model_json['config'])
         # print model_json
         year_items = model_json
         # print year_items
@@ -239,30 +247,30 @@ def obtain_model(series_id):
         # print year_items
         for param in ['config','param']:
 
-            # print param
             for year_item in year_items[param]:
 
                 # print param
                 for chile_item in year_item[param+'items']:
 
-                    # print chile_item
+                    # print(chile_item)
                     valueName = chile_item['name']
                     valueItems = chile_item['valueitems']
-
+                    # print(valueName,valueItems)
                     # print chile_item
-                    # print valueName
+                    # print(valueName)
                     for key,values in configs.items():
 
-                        # print key,values
+                        
                         if valueName == values['name']:
                             enName = key
                             break
+                        else:
+                            enName = None
                     #
-                    # print enName
 
                     for spec_item in valueItems:
 
-                        # print spec_item
+                        # print(spec_item)
                         model_count = model_count + 1
 
                         spec_id = spec_item['specid']
@@ -276,8 +284,14 @@ def obtain_model(series_id):
                         # print spec_name
 
                         # spec_name = spec_name
-                        addtwodimdict(dict_model,spec_id,enName,spec_name)
-                        # print "共{}条，名称{}，值{}".format(model_count,spec_id,spec_name)
+                        if(enName != None):
+                            addtwodimdict(dict_model,spec_id,enName,spec_name)
+                        # if(enName == 'seat_numer'):
+                        #     print(enName)
+                            
+                        #     print("seat_numer:"+dict_model)
+                        #     exit()
+                        # print("共{}条，名称{}，值{}".format(model_count,spec_id,spec_name))
 
                     # print valueItems
         # print dict_model
@@ -286,13 +300,15 @@ def obtain_model(series_id):
 #具体车款存储
 def model_type_save(data):
 
-    # print data
+    # print(data)
 
     values = []
+    # values1 = []
     item_key = []
     pleis = []
     car_name = ''
     car_values = ''
+    
     for key,item in data.items():
         # print key,values
         # print item.keys()
@@ -303,21 +319,32 @@ def model_type_save(data):
             item_key = item.keys()
             # print item_key
             for i in item_key:
+                
                 pleis.append('%s')
 
             car_name = ",".join(item_key)
-
-        values.append(tuple(item.values()))
+            
+        item_value = []
+        for k,it in item.items():
+            if(it == '-' or it == '●'):
+                item_value.append(0)
+            else:
+                item_value.append(it)
+        # print(len(item_value))
+        values.append(tuple(item_value))
+        
+        # values.append(tuple(item.values()))
+        
 
     car_values = ",".join(pleis)
 
     # print car_name
-    # print values
+    # print(values)
     # print car_values
 
     # str = 'INSERT INTO car_model_type('+car_name+') values('+car_values+')'
-    # print str
-    rowcount = cur.executemany('INSERT INTO car_model_type('+car_name+') values('+car_values+')', values)
+    # print(str)
+    rowcount = cur.executemany('INSERT INTO car_model_type ('+car_name+') values ('+car_values+')', values)
     conn.commit()
 
     # cur.close()
@@ -336,7 +363,11 @@ def main():
     result = get_brand()
     # obtain_brand()
     # print result
-    obtain_series(result)
+    try:
+      obtain_series(result)
+    except Exception as e:
+        pass  
+    
     # result = obtain_model(66)
     # model_type_save(result)
 

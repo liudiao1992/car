@@ -6,8 +6,8 @@ import pymysql
 
 HOSTNAME = '127.0.0.1'
 USERNAME = 'root'
-PASSWORD = ''
-DATABASE = 'pydata'
+PASSWORD = 'root'
+DATABASE = 'car'
 
 
 brand = 'http://www.autohome.com.cn/ashx/AjaxIndexCarFind.ashx?type=1'
@@ -62,7 +62,7 @@ def obtain_series(brand_list):
                                    series_item['seriesstate'], series_item['seriesorder'])
                         args.append(sub_arg)
 
-                print args
+                print(args)
 
                 rowcount = cur.executemany('''INSERT INTO auto_home_car_series(brand_id, factory_id, `factory_name`, 
                                         `series_id`, `series_name`, `series_state`,`series_order`)
