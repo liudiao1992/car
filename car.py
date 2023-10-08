@@ -114,150 +114,149 @@ def get_brand():
         data = []
         for letter in soup.select(".cartree-letter"):
             # print args.get("href")
-            # print letter.find_next()
             for li in letter.find_next():
+                brand_id = li.get("id")[1:]
                 args = li.find("a")
-                sub_arg = (letter.get_text(),args['href'],re.findall(u'.*\(', args.get_text())[0].replace("(",""),re.findall(u"\d+\.?\d*", args.find("em").get_text())[0])
+                
+                sub_arg = (letter.get_text(),args['href'],re.findall(u'.*\(', args.get_text())[0].replace("(",""),re.findall(u"\d+\.?\d*", args.find("em").get_text())[0],brand_id)
                 data.append(sub_arg)
-
-                # print li
 
 
         # 保存所有汽车品牌 
-        # rowcount = cur.executemany('INSERT INTO car_brand (firstletter,linkurl,name,carnum) values(%s,%s,%s,%s)', data)
+        # cur.executemany('INSERT INTO car_brand (firstletter,linkurl,name,carnum,brand_id) values(%s,%s,%s,%s,%s)', data)
         # conn.commit()
         
-        #
         # cur.close()
         # conn.close()
 
-        # print data
-
         return data
 
-def obtain_brand():
-    res = requests.get(brandUrl)
-    # print request_brand
-    # print res.url
-    # res.encoding = 'utf-8';
-    # print res.encoding
-    # print res.raw
-    # print res.json()
-    if res.status_code == 200:
-        res.close()
-        res.encoding = 'gb2312'
-        resHtml = res.text
-
-        # print resHtml
-        soup = BeautifulSoup(resHtml,'lxml')
-        # print soup
-        # print soup.title
-        # print soup.title
-        # print soup.find_all(id='cartree')
-        # print soup.select("#cartree .cartree-letter")
-        # print soup.select(".cartree-letter")
-
-        # print soup.find_all("div")
-
-        print(soup.find_all(name='div', attrs={"class":"cartree"}))
-
-        for div in soup.find_all(name='div', attrs={"class":"cartree-letter"}):
-            print(div.get_text())
-
-        for letter in soup.select("#cartree .cartree-letter"):
-            print(letter())
-
-def obtain_series(data):
+def obtain_series(data,type):
 
     host = 'https://car.autohome.com.cn'
-    # print data
-
+    # print(data)
+    
     for info in data:
-
-        # print("obtain_series:"+host + info[1])
+        brand_id = info[4]
+        # print("obtain_series_url:"+host + info[1])
         res = requests.get(host+info[1])
         if res.status_code == 200:
             res.close()
         # res.encoding = 'gb2312'
         soup = BeautifulSoup(res.text, "lxml")
         # print(soup.title)
-        # print soup.title
 
         level_name = ''
         for series in soup.select('div[class="carbradn-cont fn-clear"] dl'):
-
+            series_data = []
             firm = series.find('dt').get_text()
             firm_url = series.find('dt').find('a').get('href')
 
-            # print firm
 
             for level in series.select("dd div"):
-
-                # print level.attrs['class']
                 if level.attrs['class'][0] == 'list-dl-text':
                     level_name = level.find_previous().get_text()[:-1]
-                    # print level_name
                     for model in level.select("a"):
 
                         model_name = model.get_text()
                         model_url = model.get("href")
+                        series_id = re.findall("series-(\d+)[\.|-]",model_url)[0]
 
-                        # print firm,firm_url,level_name,model_name,model_url
-
-                        #保存车系数据             
-                        # rowcount = cur.execute('INSERT INTO car_series (firm,firmurl,levelname,model,modelurl,brandurl) values(%s,%s,%s,%s,%s,%s)', (firm, firm_url, level_name, model_name, model_url, res.url))
-                        # conn.commit()
-
-                        try:
-                            result = obtain_model(re.findall("series-(\d+)[\.|-]",model_url)[0])
-                            model_type_save(result)
-                        except Exception as e:
-                            pass
-                        
-
+                        series_data.append((brand_id,series_id,firm, firm_url, level_name, model_name, model_url, res.url))
+            
+            if type == 'series':
+                try:
+                    series_save(series_data)
+                except Exception as e:
+                    pass
+            elif type == 'color':
+                try:
+                    color_save(series_data)
+                except Exception as e:
+                    pass
+            elif type == 'model_type':
+                try:
+                    model_type_handle(series_data)
+                except Exception as e:
+                    pass
+            else:
+                print("处理方式错误，程序退出")
+                exit
+                
+    print("保存车辆数据完成")
+    exit       
     # cur.close()
     # conn.close()
+    
+#保存车系数据   
+def series_save(series_data):
+    print(series_data)         
+    cur.executemany('INSERT INTO car_series (brand_id,series_id,firm,firmurl,levelname,model,modelurl,brandurl) values(%s,%s,%s,%s,%s,%s,%s,%s)', series_data)
+    conn.commit()
+    
+    
+# 保存车系颜色      
+def color_save(series_data): 
+    for info in series_data:
+        color_data = []
+        series_id = str(info[1])
+        url = 'https://www.autohome.com.cn/'+series_id
+        res = requests.get(url)
+        if res.status_code == 200:
+            res.close()
+            # res.encoding = 'gb2312'
+        soup = BeautifulSoup(res.text, "lxml")
+        for colors in soup.select('div[class="information-pic"] div[class="athm-carcolor__inner"] a div[class="athm-carcolor__tip"]'):
+            color = colors.get_text()
+            color_data.append((series_id, color))
+            
+        for colors_more in soup.select('div[class="athm-carcolor__inner-more"] a div[class="athm-carcolor__tip"]'):
+            color_more = colors_more.get_text()
+            color_data.append((series_id, color_more))
+        print(color_data)
+        cur.executemany('INSERT INTO car_color (series_id,color) values(%s,%s)', color_data)
+        conn.commit()
+    
+
+
+#保存车款信息      
+def model_type_handle(series_data):         
+    for info in series_data:
+        series_id = info[1]
+        
+        try:
+            result = obtain_model(series_id)
+            model_type_save(result,series_id)
+        except Exception as e:
+            pass
+
 
 def obtain_model(series_id):
-
     url = 'https://car.m.autohome.com.cn/ashx/car/GetModelConfigNew.ashx?seriesId={}'
     request_model = requests.get(url.format(series_id))
-    #
     print(request_model.url)
-    # print request_model.text
-    # print(request_model.json())
-    # exit()
-    # # print request_model.status_code
-    # result = request_model.json()
-    # print result
-    # print result['param']
 
     if request_model.status_code == 200:
         model_json = request_model.json()
         request_model.close()
         # print(model_json['config'])
-        # print model_json
         year_items = model_json
-        # print year_items
 
         dict_model = dict()
         args = []
         model_count = 0
 
-        # print year_items
         for param in ['config','param']:
 
             for year_item in year_items[param]:
 
-                # print param
                 for chile_item in year_item[param+'items']:
 
                     # print(chile_item)
                     valueName = chile_item['name']
                     valueItems = chile_item['valueitems']
                     # print(valueName,valueItems)
-                    # print chile_item
-                    # print(valueName)
+
                     for key,values in configs.items():
 
                         
@@ -266,22 +265,13 @@ def obtain_model(series_id):
                             break
                         else:
                             enName = None
-                    #
 
                     for spec_item in valueItems:
-
                         # print(spec_item)
                         model_count = model_count + 1
 
                         spec_id = spec_item['specid']
                         spec_name = spec_item['value']
-                        # print spec_name
-
-                        # sub_args = (spec_item[0], year_item['id'], year_item['name'], spec_item['id'], spec_item['name'],
-                        #             spec_item['state'], spec_item['minprice'], spec_item['maxprice'])
-                        # args.append(sub_args)
-
-                        # print spec_name
 
                         # spec_name = spec_name
                         if(enName != None):
@@ -298,30 +288,19 @@ def obtain_model(series_id):
         return dict_model
 
 #具体车款存储
-def model_type_save(data):
-
+def model_type_save(data,series_id):
     # print(data)
-
     values = []
-    # values1 = []
     item_key = []
     pleis = []
     car_name = ''
     car_values = ''
     
     for key,item in data.items():
-        # print key,values
-        # print item.keys()
-        # print item.values()
-
-        # print len(item_key)
         if len(item_key) == 0:
             item_key = item.keys()
-            # print item_key
             for i in item_key:
-                
                 pleis.append('%s')
-
             car_name = ",".join(item_key)
             
         item_value = []
@@ -330,22 +309,23 @@ def model_type_save(data):
                 item_value.append(0)
             else:
                 item_value.append(it)
+        #车系id
+        item_value.append(series_id)
         # print(len(item_value))
         values.append(tuple(item_value))
         
         # values.append(tuple(item.values()))
-        
 
+    #车系id
+    pleis.append('%s') 
     car_values = ",".join(pleis)
-
-    # print car_name
-    # print(values)
-    # print car_values
-
-    # str = 'INSERT INTO car_model_type('+car_name+') values('+car_values+')'
-    # print(str)
-    rowcount = cur.executemany('INSERT INTO car_model_type ('+car_name+') values ('+car_values+')', values)
-    conn.commit()
+    if car_name:
+        car_name = car_name+',series_id'
+        # str = 'INSERT INTO car_model_type('+car_name+') values('+car_values+')'
+        # print("sql:"+str)
+        cur.executemany('INSERT INTO car_model_type ('+car_name+') values ('+car_values+')', values)
+        conn.commit()
+    
 
     # cur.close()
     # conn.close()
@@ -357,19 +337,22 @@ def addtwodimdict(thedict, key_a, key_b, val):
     else:
         thedict.update({key_a:{key_b: val}})
 
+
 def main():
-    # for i in range(10):
-    #     print(i,end=(','))
-    result = get_brand()
-    # obtain_brand()
-    # print result
-    try:
-      obtain_series(result)
-    except Exception as e:
-        pass  
     
-    # result = obtain_model(66)
-    # model_type_save(result)
+    sql = 'select brand_id,series_id,firm,firmurl,levelname,model,modelurl,brandurl from car_series'
+    cur.execute(sql)
+    data = cur.fetchall()
+    model_type_handle(data)
+    # color_save(data)
+    # result = get_brand()
+    #车系数据
+    # obtain_series(result,type='series')
+    #车系颜色
+    # obtain_series(result,type='color')
+    #具体车款
+    # obtain_series(result,type='model_type')
+
 
 if '__main__' == __name__:
     main()
