@@ -46,7 +46,7 @@ https://car.m.autohome.com.cn/ashx/car/GetModelConfigNew.ashx?seriesId={}
 ----------
 项目运行：
 
-python 版本： python-2.7.6
+python 版本： python-3.12.0
 
 python car.py
 
