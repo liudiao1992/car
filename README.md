@@ -30,7 +30,7 @@ https://car.m.autohome.com.cn/ashx/car/GetModelConfigNew.ashx?seriesId={}
 
 >pymysql
 
->BeautifulSoup
+>beautifulsoup4
 
 >lxml
 
