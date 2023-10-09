@@ -1,10 +1,3 @@
-# encoding:utf-8
-# ------------------------------------------------
-#    作用：抓取汽车之家车型库
-#    日期：2018-03-25
-#    作者：呆呆
-# ------------------------------------------------
-
 
 import importlib
 import lxml
@@ -14,6 +7,11 @@ from bs4 import BeautifulSoup
 import re
 import json
 import sys
+import os
+from urllib import parse
+import time
+import threading
+from dbutils.pooled_db import PooledDB
 
 import config_default
 
@@ -36,70 +34,45 @@ configs = config_default.configs
 # importlib.reload(sys)
 
 # sys.setdefaultencoding('utf-8')
+pool = PooledDB(
+    #使用数据库的模块
+    creator=pymysql, 
 
-HOSTNAME = '127.0.0.1'
-USERNAME = 'root'
-PASSWORD = 'root'
-DATABASE = 'car'
+    #设置最大连接数量     
+    maxconnections=32,  
 
-conn = pymysql.connect(host = HOSTNAME, user=USERNAME, password=PASSWORD, database=DATABASE, charset="utf8")
+    #设置初始空闲连接数量    
+    mincached=10, 
+
+    #连接池中没有空闲连接后设置是否等待，True等待，False不等待
+    blocking=True,   
+    
+    #检查服务是否可用
+    ping=0,
+
+    host='127.0.0.1',
+    user='root',
+    password='root',
+    db = 'car',
+    port=3306,
+)
+
+# HOSTNAME = '127.0.0.1'
+# USERNAME = 'root'
+# PASSWORD = 'root'
+# DATABASE = 'car'
+
+conn =  pool.connection() 
+# conn = pymysql.connect(host = HOSTNAME, user=USERNAME, password=PASSWORD, database=DATABASE, charset="utf8")
 cur = conn.cursor()
 
 
 # print cur
-
+ip = ''
+ip_time = 0
 brandUrl = 'https://car.autohome.com.cn'
 seriesUrl = 'https://car.autohome.com.cn/price/series-{}.html'
 modelUrl = 'https://car.autohome.com.cn/config/spec/{}.html#pvareaid={}'
-
-# BeautifulSoup用法
-'''
-soup = BeautifulSoup("<html>data</html>","lxml")
-soup = BeautifulSoup('<b name="test" class="boldest">Extremely bold</b>','lxml')
-tag = soup.b
-# print tag
-# print soup.prettify()
-# print soup.body
-# print type(soup.b)
-print soup.name
-print soup.b.attrs
-print soup.b['class']
-print soup.string
-
-print soup.b
-print soup.b.string
-print type(soup.b.string)
-
-print soup.find_all('b')
-soup.find_all(["a", "b"])
-soup.find_all("a", limit=2)
-soup.find_all(id='link2')
-
-soup.find_all(href=re.compile("elsie"))
-soup.find_all("a", class_="sister")
-soup.find_all(href=re.compile("elsie"), id='link1')
-
-soup.html.find_all("title")
-soup.find_all('b')
-
-print soup.select('#link1')
-print soup.select('title')
-print soup.select('p #link1')
-print soup.select("head > title")
-print soup.select('a[class="sister"]')
-print soup.select('.sister')
-
-html = ''
-soup = BeautifulSoup(html, 'lxml')
-print type(soup.select('title'))
-print soup.select('title')[0].get_text()
-
-for tag in soup.find_all(re.compile("^b")):
-    print(tag.name)
-
-for title in soup.select('title'):
-    print title.get_text()
-'''
 
 def get_brand():
     res = requests.get('https://car.autohome.com.cn/AsLeftMenu/As_LeftListNew.ashx?typeId=1%20&brandId=0%20&fctId=0%20&seriesId=0')
@@ -217,7 +190,129 @@ def color_save(series_data):
         cur.executemany('INSERT INTO car_color (series_id,color) values(%s,%s)', color_data)
         conn.commit()
     
+#保存车辆图片
+def image_save(series_data):
+    for info in series_data:
+        brand_id = info[0]
+        path = "D:/work/uploads/car/" + str(brand_id)
+        if not os.path.exists(path):
+            os.mkdir(path)
+        series_id = info[1]
+        url = 'https://www.autohome.com.cn/'+str(series_id)
+        print(url)
+        res = requests.get(url)
+        if res.status_code == 200:
+            res.close()
+            # res.encoding = 'gb2312'
+        soup = BeautifulSoup(res.text, "lxml")
+        main_pic = soup.find(class_='pic-main')
+        main_pic1 = soup.find(class_='models_pics')
+        if main_pic:   
+            main_url = 'http:' + main_pic.find('a').get('href')
+        elif main_pic1:
+            main_url = 'http:' + main_pic1.find('dt').find('a').get('href')
+        else:
+            continue
+        result = requests.get(main_url)
+        if result.status_code == 200:
+            result.close()
+        parse_url = parse.urlparse(main_url)
+        url_path = parse_url.path.split('/')
+        img_id = url_path[4][:-5]
+        print(img_id)
+        
+        soup1 = BeautifulSoup(result.text, "lxml")  
+        #获取主图
+        current_li = soup1.find('li',{'id':'li'+img_id})
+        if  not current_li:
+            continue
+        else:
+            current_li_image = current_li.find('img')
+            if not current_li_image:
+                continue
+            else:
+                main_image_url = 'http:'+ current_li_image.get('src')
+                headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/95.0.4638.69 Safari/537.36'}
+                # 调用get_ip函数，获取代理IP
+                proxies = get_ip()
+                # 每次发送请求换代理IP，获取图片，防止被封
+                img_data = requests.get(url=main_image_url, headers=headers, proxies=proxies).content
+                # img_data = requests.get(url=main_image_url, headers=headers).content
+                # 拼接图片存放地址和名字
+                img_path = path+'/'+str(series_id)+'.jpg'
+                # 将图片写入指定位置
+                with open(img_path, 'wb') as f:
+                    f.write(img_data)
+                    image_value = 'uploads/car/'+str(brand_id)+'/'+str(series_id)+'.jpg'
+                cur.execute("UPDATE car_series SET %s='%s' where series_id = %d" % ('main_image',image_value,series_id))
+                conn.commit()
+                
+                    
+                #继续获取其他图片    
+                i = 1
+                img_list = []
+                while i<=5: 
+                    current_li = current_li.find_next('li')
+                    if not current_li:
+                        break
+                    else:
+                        current_li_image = current_li.find('img')
+                        if not current_li_image:
+                            break
+                        else:
+                            img_list.append('http:'+ current_li_image.get('src'))
+                    i = i+1
+                print(img_list)
+                
+                key = 1
+                other_images = []
+                images_value = ''
+                for item in img_list:
+                    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/95.0.4638.69 Safari/537.36'}
+                    # 调用get_ip函数，获取代理IP
+                    proxies = get_ip()
+                    # 每次发送请求换代理IP，获取图片，防止被封
+                    # img_data = requests.get(url=item, headers=headers).content
+                    img_data = requests.get(url=item, headers=headers, proxies=proxies).content
+                    # 拼接图片存放地址和名字
+                    img_path = path+'/'+str(series_id)+'_'+str(key)+'.jpg'
+                    # 将图片写入指定位置
+                    with open(img_path, 'wb') as f:
+                        f.write(img_data)
+                        other_image_value = 'uploads/car/'+str(brand_id)+'/'+str(series_id)+'_'+str(key)+'.jpg'
+                        other_images.append(other_image_value)
+                    key = key + 1
+                images_value = ','.join(other_images) 
+                cur.execute("UPDATE car_series SET %s='%s' where series_id = %d" % ('other_images',images_value,series_id))
+                conn.commit()
+    cur.close()
+    conn.close()
+    
+                
+                
+#获取ip
+def get_ip():
+    global ip,ip_time
+    if time.time() >= ip_time + 60:
+        url = "http://v2.api.juliangip.com/dynamic/getips?auto_white=1&num=1&pt=1&result_type=text&split=1&trade_no=1649731001581632&sign=a7f8fdaa211aa60215ebdc87e946b487"
+        while 1:
+            try:
+                r = requests.get(url, timeout=10)
+            except:
+                continue
 
+            ip = r.text.strip()
+            ip_time = time.time()
+            if '请求过于频繁' in ip:
+                print('IP请求频繁')
+                time.sleep(1)
+                continue
+            break
+    print(ip)
+    proxies = {
+        'https': '%s' % ip
+    }
+    return proxies       
 
 #保存车款信息      
 def model_type_handle(series_data):         
@@ -258,8 +353,6 @@ def obtain_model(series_id):
                     # print(valueName,valueItems)
 
                     for key,values in configs.items():
-
-                        
                         if valueName == values['name']:
                             enName = key
                             break
@@ -338,21 +431,58 @@ def addtwodimdict(thedict, key_a, key_b, val):
         thedict.update({key_a:{key_b: val}})
 
 
-def main():
-    
-    sql = 'select brand_id,series_id,firm,firmurl,levelname,model,modelurl,brandurl from car_series'
+def thread1():
+    sql = 'select brand_id,series_id,firm,firmurl,levelname,model,modelurl,brandurl from car_series where id >= 1893 and id<2000'
     cur.execute(sql)
     data = cur.fetchall()
-    model_type_handle(data)
-    # color_save(data)
+    image_save(data)
+    
+    
+def thread2():
+    sql = 'select brand_id,series_id,firm,firmurl,levelname,model,modelurl,brandurl from car_series where id >= 2659 and id<3000'
+    cur.execute(sql)
+    data = cur.fetchall()
+    image_save(data)
+
+def thread3():
+    sql = 'select brand_id,series_id,firm,firmurl,levelname,model,modelurl,brandurl from car_series where id >= 3000 and id<4000'
+    cur.execute(sql)
+    data = cur.fetchall()
+    image_save(data)
+    
+
+def main():
+    t1 = threading.Thread(target=thread1)
+    # t2 = threading.Thread(target=thread2)
+    # t3 = threading.Thread(target=thread3)
+    
+    t1.start()
+    # t2.start()
+    # t3.start()
+    
+    
+    
+    #车辆品牌
     # result = get_brand()
-    #车系数据
+    #根据品牌获取对应车系数据并保存数据库
     # obtain_series(result,type='series')
+    #车系数据未保存至数据库
     #车系颜色
     # obtain_series(result,type='color')
     #具体车款
     # obtain_series(result,type='model_type')
-
+    
+    #车系数据保存至数据库后从数据库获取车系数据
+    # sql = 'select brand_id,series_id,firm,firmurl,levelname,model,modelurl,brandurl from car_series where id >= 598'
+    # cur.execute(sql)
+    # data = cur.fetchall()
+    #具体车款
+    # model_type_handle(data)
+    #车系颜色
+    # color_save(data)
+    # 车辆图片
+    # image_save(data)
+    
 
 if '__main__' == __name__:
     main()
