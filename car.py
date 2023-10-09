@@ -436,28 +436,31 @@ def thread1():
     cur.execute(sql)
     data = cur.fetchall()
     image_save(data)
+    print('线程1处理完成')
     
     
 def thread2():
-    sql = 'select brand_id,series_id,firm,firmurl,levelname,model,modelurl,brandurl from car_series where id >= 2659 and id<3000'
+    sql = 'select brand_id,series_id,firm,firmurl,levelname,model,modelurl,brandurl from car_series where id >= 2701 and id<3000'
     cur.execute(sql)
     data = cur.fetchall()
     image_save(data)
+    print('线程2处理完成')
 
 def thread3():
-    sql = 'select brand_id,series_id,firm,firmurl,levelname,model,modelurl,brandurl from car_series where id >= 3000 and id<4000'
+    sql = 'select brand_id,series_id,firm,firmurl,levelname,model,modelurl,brandurl from car_series where id >= 3000'
     cur.execute(sql)
     data = cur.fetchall()
     image_save(data)
+    print('线程3处理完成')
     
 
 def main():
-    t1 = threading.Thread(target=thread1)
-    # t2 = threading.Thread(target=thread2)
+    # t1 = threading.Thread(target=thread1)
+    t2 = threading.Thread(target=thread2)
     # t3 = threading.Thread(target=thread3)
     
-    t1.start()
-    # t2.start()
+    # t1.start()
+    t2.start()
     # t3.start()
     
     
